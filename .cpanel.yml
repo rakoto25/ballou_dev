@@ -4,23 +4,27 @@ deployment:
     - export REPO_DIR="$PWD"
     - export DEPLOY_DIR="$HOME/public_html/dev/apps/ballou-dev"
 
-    # Node 20 (si nécessaire selon l'hébergeur)
+    # (optionnel) pointer Node 20 si nécessaire selon l'hébergeur
     - if [ -x /opt/cpanel/ea-nodejs20/bin/node ]; then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
+    - node -v || true
+    - npm -v || true
 
-    # RAM & télémétrie
+    # limites RAM & télémétrie
     - export NODE_OPTIONS="--max-old-space-size=512"
     - export NEXT_TELEMETRY_DISABLED=1
+
+    # on force le basePath attendu en prod
     - export NEXT_BASE_PATH="/apps/ballou-dev"
 
     - mkdir -p "$DEPLOY_DIR"
 
-    # install (avec lock si présent)
+    # install (prend le lock s'il existe)
     - if [ -f package-lock.json ]; then npm ci --omit=dev; else npm i --omit=dev; fi
 
-    # ✅ build => génère REPO_DIR/out via output:'export'
+    # ✅ Next >=14 : `next build` génère /out grâce à output:'export'
     - npm run build
 
-    # sync vers le sous-dossier du sous-domaine
+    # synchro atomique vers le sous-dossier du sous-domaine
     - if command -v rsync >/dev/null 2>&1; then \
         rsync -a --delete --exclude='.well-known' "$REPO_DIR/out/" "$DEPLOY_DIR/"; \
       else \
