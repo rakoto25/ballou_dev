@@ -4,32 +4,25 @@ deployment:
     - export REPO_DIR="$PWD"
     - export DEPLOY_DIR="$HOME/public_html/dev/apps/ballou-dev"
 
-    # (optionnel) pointer Node 20 si nécessaire selon l'hébergeur
+    # (optionnel) pointer Node 20 si dispo
     - if [ -x /opt/cpanel/ea-nodejs20/bin/node ]; then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
-    - node -v || true
-    - npm -v || true
 
-    # limites RAM & télémétrie
     - export NODE_OPTIONS="--max-old-space-size=512"
     - export NEXT_TELEMETRY_DISABLED=1
-
-    # on force le basePath attendu en prod
     - export NEXT_BASE_PATH="/apps/ballou-dev"
 
     - mkdir -p "$DEPLOY_DIR"
 
-    # install (prend le lock s'il existe)
+    # Install
     - if [ -f package-lock.json ]; then npm ci --omit=dev; else npm i --omit=dev; fi
 
-    # ✅ Next >=14 : `next build` génère /out grâce à output:'export'
+    # Build (Next >=14 + output:'export' => génère /out)
     - npm run build
 
-    # synchro atomique vers le sous-dossier du sous-domaine
-    - if command -v rsync >/dev/null 2>&1; then \
-        rsync -a --delete --exclude='.well-known' "$REPO_DIR/out/" "$DEPLOY_DIR/"; \
-      else \
-        find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 ! -name '.well-known' -exec rm -rf {} +; \
-        cp -a "$REPO_DIR/out/." "$DEPLOY_DIR/"; \
-      fi
+    # Déploiement atomique : on copie dans un dossier temporaire puis on swap
+    - export TMP_DIR="$(mktemp -d "$HOME/tmp/ballou-XXXX")"
+    - cp -a "$REPO_DIR/out/." "$TMP_DIR/"
+    - rm -rf "$DEPLOY_DIR"
+    - mv "$TMP_DIR" "$DEPLOY_DIR"
 
     - echo "✅ Déployé vers $DEPLOY_DIR à $(date)"
