@@ -1,26 +1,36 @@
 deployment:
   tasks:
+    - set -e
+    - echo "📦 REPO_DIR=$PWD"
     - export REPO_DIR="$PWD"
     - export DEPLOY_DIR="$HOME/public_html/dev/apps/ballou-dev"
+    - echo "🌐 DEPLOY_DIR=$DEPLOY_DIR"
 
     # Node 20 (selon l'hébergeur)
     - if [ -x /opt/cpanel/ea-nodejs20/bin/node ]; then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
+    - echo "🧭 Node path: $(which node || true)"
+    - node -v || true
+    - npm -v || true
 
-    # Limiter la RAM
+    # Limiter la RAM (mutualisé)
     - export NODE_OPTIONS="--max-old-space-size=512"
     - export NEXT_TELEMETRY_DISABLED=1
     - export NEXT_BASE_PATH="/apps/ballou-dev"
 
+    # Install (fallback si pas de package-lock.json)
+    - if [ -f package-lock.json ]; then npm ci --omit=dev; else npm i --omit=dev; fi
+
+    # Build + Export
+    - npm run build
+    - npm run export
+
+    - echo "📂 Contenu de out/:"
+    - ls -la "$REPO_DIR/out" || true
+
+    # Préparer le dossier cible
     - mkdir -p "$DEPLOY_DIR"
-    - npm ci --omit=dev
-    - npm run build && npm run export
 
     # Sync vers le sous-dossier du sous-domaine
-    - if command -v rsync >/dev/null 2>&1; then \
-        rsync -a --delete --exclude='.well-known' "$REPO_DIR/out/" "$DEPLOY_DIR/"; \
-      else \
-        find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 ! -name '.well-known' -exec rm -rf {} +; \
-        cp -a "$REPO_DIR/out/." "$DEPLOY_DIR/"; \
-      fi
+    - if command -v rsync >/dev/null 2>&1; then rsync -a --delete --exclude='.well-known' "$REPO_DIR/out/" "$DEPLOY_DIR/"; else find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 ! -name '.well-known' -exec rm -rf {} +; cp -a "$REPO_DIR/out/." "$DEPLOY_DIR/"; fi
 
     - echo "✅ Déployé vers $DEPLOY_DIR à $(date)"
