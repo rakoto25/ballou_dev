@@ -1,0 +1,98 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ "main" ]
+
+# Évite les déploiements qui se chevauchent si tu pousses plusieurs fois vite
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps & Build
+        run: |
+          npm ci
+          npm run build
+
+      # (Optionnel) si tu génères un dossier de build spécifique, liste-le ici.
+      # Pour Next.js, tu peux vouloir rsync tout le repo SANS node_modules, tout en gardant .next.
+      # Adapte selon ton framework (React/Vite: 'dist', Next: '.next', etc.)
+      - name: Rsync build to server
+        uses: burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -az --delete
+          path: ./
+          remote_path: ${{ secrets.APP_DIR }}
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_KEY }}
+          # Ajoute ici ce que tu ne veux JAMAIS pousser
+          excludes: |
+            .git
+            .github
+            node_modules
+            .env
+            npm-debug.log
+            yarn.lock
+            pnpm-lock.yaml
+            .DS_Store
+
+      # S'assure que le dossier existe et que PM2 utilise la bonne version de Node (via NVM)
+      - name: PM2 reload (via SSH)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+
+            # Charge NVM si tu l'utilises
+            if [ -f "$HOME/.bash_profile" ]; then
+              . "$HOME/.bash_profile"
+            fi
+            if [ -f "$HOME/.bashrc" ]; then
+              . "$HOME/.bashrc"
+            fi
+
+            mkdir -p "${{ secrets.APP_DIR }}"
+            cd "${{ secrets.APP_DIR }}"
+
+            # Si tu déploies le build déjà prêt ET que ton app a besoin des deps runtime:
+            # (ex: Next 'npm start' côté serveur a parfois besoin de deps en prod)
+            if [ -f "package.json" ]; then
+              if command -v npm >/dev/null 2>&1; then
+                npm ci --omit=dev || npm ci
+              fi
+            fi
+
+            # PM2 (assure-toi qu'il est global sur le serveur)
+            if ! command -v pm2 >/dev/null 2>&1; then
+              npm i -g pm2
+            fi
+
+            # Démarre/recharge
+            if [ -f "ecosystem.config.js" ]; then
+              pm2 startOrReload ecosystem.config.js
+            else
+              # Fallback: adapte la commande à ton app
+              pm2 delete ballou-dev || true
+              pm2 start npm --name "ballou-dev" -- start
+            fi
+
+            pm2 save
