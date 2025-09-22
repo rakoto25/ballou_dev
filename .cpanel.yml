@@ -1,28 +1,21 @@
 deployment:
   tasks:
-    # Répertoires utiles
     - export REPO_DIR="$PWD"
     - export DEPLOY_DIR="$HOME/public_html/dev/apps/ballou-dev"
 
-    # S'assurer que Node 20 est dans le PATH (selon config cPanel)
+    # Node 20 (selon l'hébergeur)
     - if [ -x /opt/cpanel/ea-nodejs20/bin/node ]; then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
 
-    # Limiter la RAM pour éviter "Killed" sur mutualisé
+    # Limiter la RAM
     - export NODE_OPTIONS="--max-old-space-size=512"
     - export NEXT_TELEMETRY_DISABLED=1
-    # BasePath explicite pour l'export (au cas où)
     - export NEXT_BASE_PATH="/apps/ballou-dev"
 
-    # Préparer le dossier cible
     - mkdir -p "$DEPLOY_DIR"
-
-    # Installation propre (utilise package-lock.json si présent)
     - npm ci --omit=dev
+    - npm run build && npm run export
 
-    # Build + Export statique Next.js
-    - npm run build:static
-
-    # Déploiement atomique : on remplace le contenu (sauf .well-known si tu en as besoin)
+    # Sync vers le sous-dossier du sous-domaine
     - if command -v rsync >/dev/null 2>&1; then \
         rsync -a --delete --exclude='.well-known' "$REPO_DIR/out/" "$DEPLOY_DIR/"; \
       else \
