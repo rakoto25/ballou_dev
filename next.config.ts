@@ -1,29 +1,25 @@
+// next.config.ts
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === 'production';
-const isVercel = !!process.env.VERCEL;
 
-// Chemin cPanel (sous-dossier)
-const CPANEL_BASE = '/apps/ballou-dev';
+// S’il n’y a pas de NEXT_BASE_PATH fourni, on peut déduire /<repo> en CI GitHub
+const inferFromRepo =
+  process.env.GITHUB_REPOSITORY
+    ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}`
+    : '';
 
-// Sur Vercel: pas de basePath. Sur cPanel: basePath (sauf si tu le overrides via NEXT_BASE_PATH)
-const basePath = isVercel
-  ? ''
-  : (process.env.NEXT_BASE_PATH ?? (isProd ? CPANEL_BASE : ''));
-
-// Sur Vercel, pas d'assetPrefix
-const assetPrefix = isVercel ? undefined : (basePath ? `${basePath}/` : undefined);
+const basePath =
+  process.env.NEXT_BASE_PATH ||
+  (isProd ? inferFromRepo : '');
 
 const nextConfig = {
-  output: 'export',       // tu peux le garder: Vercel sait servir l'export statique
+  output: 'export',
   trailingSlash: true,
   basePath,
-  assetPrefix,
+  assetPrefix: basePath ? `${basePath}/` : undefined,
   images: {
     unoptimized: true,
-    remotePatterns: [
-      { protocol: 'https', hostname: 'picsum.photos' },
-      // ajoute tes domaines si besoin
-    ],
+    remotePatterns: [{ protocol: 'https', hostname: 'picsum.photos' }],
   },
 };
 
