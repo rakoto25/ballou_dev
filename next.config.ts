@@ -1,26 +1,28 @@
-// @ts-check
-
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === 'production';
+const isVercel = !!process.env.VERCEL;
 
-// le site vit sous: https://dev.balloupro.mg/apps/ballou-dev/
-const defaultBasePath = '/apps/ballou-dev';
-const basePath = process.env.NEXT_BASE_PATH || (isProd ? defaultBasePath : '');
+// Chemin cPanel (sous-dossier)
+const CPANEL_BASE = '/apps/ballou-dev';
+
+// Sur Vercel: pas de basePath. Sur cPanel: basePath (sauf si tu le overrides via NEXT_BASE_PATH)
+const basePath = isVercel
+  ? ''
+  : (process.env.NEXT_BASE_PATH ?? (isProd ? CPANEL_BASE : ''));
+
+// Sur Vercel, pas d'assetPrefix
+const assetPrefix = isVercel ? undefined : (basePath ? `${basePath}/` : undefined);
 
 const nextConfig = {
-  // export statique => génère /out
-  // (plus besoin d'app Node côté serveur)
-  output: 'export',            // cf. docs static export
-  trailingSlash: true,         // facilite l'hébergement dans un sous-dossier
-  basePath,                    // sert les URLs sous /apps/ballou-dev
-  assetPrefix: basePath ? `${basePath}/` : undefined,
-
-  // next/image sans optimisation serveur (compatible export statique)
+  output: 'export',       // tu peux le garder: Vercel sait servir l'export statique
+  trailingSlash: true,
+  basePath,
+  assetPrefix,
   images: {
-    unoptimized: true,         // important en mode static export
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'picsum.photos' },
-      // ajoute d'autres domaines ici si besoin
+      // ajoute tes domaines si besoin
     ],
   },
 };
