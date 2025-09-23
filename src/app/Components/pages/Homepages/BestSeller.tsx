@@ -3,7 +3,8 @@
 import * as React from "react";
 import Image from "next/image";
 import Autoplay from "embla-carousel-autoplay";
-import useEmblaCarousel, { EmblaOptionsType } from "embla-carousel-react";
+import useEmblaCarousel from "embla-carousel-react";
+import type { EmblaOptionsType } from "embla-carousel";
 import { motion } from "framer-motion";
 import { ShoppingCart, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -301,3 +302,4 @@ export default function Bestsellers({
  * <Bestsellers onAddToCart={(p) => console.log("add:", p)} />
  * // OU avec vos propres données: <Bestsellers products={mesProduits} />
  */
+
