@@ -1,22 +1,21 @@
-// next.config.ts
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === 'production';
+const isVercel = !!process.env.VERCEL;
 
-// S’il n’y a pas de NEXT_BASE_PATH fourni, on peut déduire /<repo> en CI GitHub
-const inferFromRepo =
-  process.env.GITHUB_REPOSITORY
-    ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}`
-    : '';
+// 👉 On n'active l'export statique qu'en PROD et hors Vercel (ex: cPanel)
+const useExport = isProd && !isVercel;
 
-const basePath =
-  process.env.NEXT_BASE_PATH ||
-  (isProd ? inferFromRepo : '');
+const basePath = useExport
+  ? (process.env.NEXT_BASE_PATH ?? '/apps/ballou-dev')
+  : '';
+
+const assetPrefix = useExport && basePath ? `${basePath}/` : undefined;
 
 const nextConfig = {
-  output: 'export',
+  output: useExport ? 'export' : undefined,
   trailingSlash: true,
   basePath,
-  assetPrefix: basePath ? `${basePath}/` : undefined,
+  assetPrefix,
   images: {
     unoptimized: true,
     remotePatterns: [{ protocol: 'https', hostname: 'picsum.photos' }],

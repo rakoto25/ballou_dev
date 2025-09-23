@@ -1,11 +1,17 @@
 "use client";
 import React from "react";
-import { Product, fmtMGA } from "./ProductTypes";
+import Link from "next/link";
+import { ProductListCard, fmtMGA, toSlug } from "./productTypes";
 
+export default function ProductCard({ p }: { p: ProductListCard }) {
+    const slug = toSlug(p); // 👈 garanti un slug
+    const href = `/produit-unique/${encodeURIComponent(slug)}/`; // 👈 trailing slash
 
-export default function ProductCard({ p }: { p: Product }) {
     return (
         <article className="group relative overflow-hidden rounded-2xl border border-zinc-200 bg-white/80 shadow-sm backdrop-blur-sm transition-transform duration-300 hover:-translate-y-1 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/60">
+            {/* toute la card cliquable */}
+            <Link href={href} className="absolute inset-0 z-10" aria-label={`Voir ${p.title}`} />
+
             <div className="relative aspect-[4/5] w-full overflow-hidden">
                 <img
                     src={p.img}
@@ -18,18 +24,26 @@ export default function ProductCard({ p }: { p: Product }) {
                 </span>
             </div>
 
-
             <div className="flex flex-col gap-2 p-4">
                 <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
                     {p.title}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Ref. {p.ref}</p>
+
                 <div className="mt-1 flex items-center justify-between">
-                    <span className="text-base font-bold text-zinc-900 dark:text-zinc-100">{fmtMGA(p.priceMGA)}</span>
+                    <span className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                        {fmtMGA(p.priceMGA)}
+                    </span>
+
+                    {/* bouton qui n’ouvre pas le lien */}
                     <button
                         type="button"
-                        className="rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-900 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                        onClick={() => alert(`Ajouter au panier: ${p.title}`)}
+                        className="z-20 rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-900 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            alert(`Ajouter au panier: ${p.title}`);
+                        }}
                     >
                         Ajouter
                     </button>
