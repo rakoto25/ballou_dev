@@ -1,28 +1,46 @@
+# .cpanel.yml
 deployment:
   tasks:
     - set -e
+
+    # Dossiers
     - export REPO_DIR="$PWD"
     - export DEPLOY_DIR="$HOME/public_html/dev/apps/ballou-dev"
+    - mkdir -p "$DEPLOY_DIR" "$HOME/tmp"
 
-    # (optionnel) pointer Node 20 si dispo
+    # Node 20 si dispo (LWS)
     - if [ -x /opt/cpanel/ea-nodejs20/bin/node ]; then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
+    - if [ -x /opt/cpanel/ea-nodejs20/bin/npm ];  then export PATH="/opt/cpanel/ea-nodejs20/bin:$PATH"; fi
 
+    # Next export statique
     - export NODE_OPTIONS="--max-old-space-size=512"
     - export NEXT_TELEMETRY_DISABLED=1
     - export NEXT_BASE_PATH="/apps/ballou-dev"
 
-    - mkdir -p "$DEPLOY_DIR"
+    # Install (garde les devDependencies pour builder Next)
+    - cd "$REPO_DIR"
+    - if [ -f package-lock.json ]; then npm ci; else npm i; fi
 
-    # Install
-    - if [ -f package-lock.json ]; then npm ci --omit=dev; else npm i --omit=dev; fi
-
-    # Build (Next >=14 + output:'export' => génère /out)
+    # Build => génère /out
     - npm run build
 
-    # Déploiement atomique : on copie dans un dossier temporaire puis on swap
-    - export TMP_DIR="$(mktemp -d "$HOME/tmp/ballou-XXXX")"
-    - cp -a "$REPO_DIR/out/." "$TMP_DIR/"
-    - rm -rf "$DEPLOY_DIR"
-    - mv "$TMP_DIR" "$DEPLOY_DIR"
+    # Déploiement atomique
+    - export TMP_DIR="$(mktemp -d "$HOME/tmp/ballou-XXXXXX")"
+    - rsync -a --delete "$REPO_DIR/out/" "$TMP_DIR/"
+    - rsync -a --delete "$TMP_DIR/" "$DEPLOY_DIR/"
+    - rm -rf "$TMP_DIR"
 
-    - echo "✅ Déployé vers $DEPLOY_DIR à $(date)"
+    # Fallback SPA (facultatif, utile si routes dynamiques exportées)
+    - |
+      if [ ! -f "$DEPLOY_DIR/.htaccess" ]; then
+        cat > "$DEPLOY_DIR/.htaccess" <<'HT'
+      RewriteEngine On
+      RewriteBase /apps/ballou-dev/
+      RewriteCond %{REQUEST_FILENAME} -f [OR]
+      RewriteCond %{REQUEST_FILENAME} -d
+      RewriteRule . - [L]
+      RewriteRule ^ index.html [L]
+      HT
+      fi
+
+    - echo "✅ Deploy -> $DEPLOY_DIR @ $(date)"
