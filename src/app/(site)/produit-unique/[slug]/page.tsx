@@ -1,111 +1,101 @@
+// app/produit-unique/[slug]/page.tsx
+import { notFound } from "next/navigation";
 import SingleProduct, { Product } from "@/app/Components/pages/produits/single/singleproduct";
 import SimilarProduct from "@/app/Components/pages/produits/single/similarproduct";
+import {
+    productBySlug,
+    listProducts,
+    type BallouProduct,
+    parseWooPrice,
+} from "@/lib/ballou";
 
-// rendre la route bien dynamique en dev
 export const dynamicParams = true;
-export const revalidate = 0;
+// mets 0 si tu veux du 100% fresh à chaque requête, sinon 60s de cache ISR
+export const revalidate = 60;
 
-/** Démo MOCK — remplace par ton fetch Woo/WP/Odoo */
-const MOCK: Product[] = [
-    {
-        id: "1",
-        slug: "sneakers-ballou-neo",
-        name: "Sneakers Ballou Néo",
-        price: 79.9,
-        oldPrice: 99.9,
-        rating: 4.6,
-        images: [
-            "https://picsum.photos/id/1011/800/800",
-            "https://picsum.photos/id/1012/800/800",
-            "https://picsum.photos/id/1013/800/800",
-        ],
-        description: "Confort maximal et style affirmé. Parfaites pour vos sorties quotidiennes.",
+/** Adapter BallouProduct -> Product (type attendu par SingleProduct/SimilarProduct)
+ *  - rating enlevé
+ *  - conversion prix forcée en Ariary (MGA)
+ *  - passage du stock (stockQty) depuis stock_qty
+ */
+function mapBallouToSingleProduct(p: BallouProduct): Product {
+    const price = parseWooPrice(p.sale ?? p.price ?? p.regular ?? "0", "MGA");
+    const oldPrice = p.regular ? parseWooPrice(p.regular, "MGA") : undefined;
+
+    // stock effectif : 0 si outofstock, sinon valeur numérique si connue, sinon "illimité" (undefined)
+    const stockQty =
+        p.stock_status === "outofstock"
+            ? 0
+            : typeof p.stock_qty === "number"
+                ? Math.max(0, p.stock_qty)
+                : undefined;
+
+    return {
+        id: String(p.id),
+        slug: p.slug,
+        name: p.name,
+        price,
+        oldPrice,
+        images: (p.images ?? []).map((i) => i.src).filter(Boolean),
+        description: "",
         specs: [
-            { label: "Coloris", value: "Blanc / Orange" },
-            { label: "Matière", value: "Mesh / Synthétique" },
-            { label: "Genre", value: "Unisexe" },
-        ],
-        tags: ["sneakers", "nouveauté", "ballou"],
-        category: "chaussures",
-    },
-    {
-        id: "2",
-        slug: "basket-street-pro",
-        name: "Basket Street Pro",
-        price: 69.0,
-        rating: 4.2,
-        images: ["https://picsum.photos/id/1021/800/800"],
-        category: "chaussures",
-    },
-    {
-        id: "3",
-        slug: "sneakers-ultra-lite",
-        name: "Sneakers Ultra Lite",
-        price: 89.0,
-        rating: 4.8,
-        images: ["https://picsum.photos/id/1022/800/800"],
-        category: "chaussures",
-    },
-    {
-        id: "4",
-        slug: "chaussure-casual-air",
-        name: "Chaussure Casual Air",
-        price: 59.9,
-        images: ["https://picsum.photos/id/1033/800/800"],
-        category: "chaussures",
-    },
-];
-
-function deslugify(slug: string) {
-    const pretty = slug.replace(/-/g, " ");
-    return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+            p.sku ? { label: "Référence", value: p.sku } : null,
+            p.stock_status ? { label: "Stock", value: p.stock_status } : null,
+        ].filter(Boolean) as { label: string; value: string }[],
+        tags: (p.categories ?? []).map((c) => c.name),
+        category: p.categories?.[0]?.slug ?? "autres",
+        stockQty, // 👈 transmis au composant pour brider (-/+) à la quantité réelle
+    };
 }
 
-async function getProductBySlug(slug: string): Promise<Product | null> {
-    const found = MOCK.find((p) => p.slug === slug);
-    if (found) return found;
-
-    // 👇 Fallback en DEV : fabrique un produit si le slug n’est pas dans le MOCK
-    // (utile tant que ta grille et ta page détail ne consomment pas la même source)
-    return {
-        id: slug,
-        slug,
-        name: deslugify(slug),
-        price: 0,
-        rating: 0,
-        images: ["https://picsum.photos/seed/" + encodeURIComponent(slug) + "/800/800"],
-        description: "Fiche produit générée automatiquement pour le slug « " + deslugify(slug) + " ». Branche tes vraies données CMS/API pour le contenu final.",
-        specs: [],
-        tags: [],
-        category: "autres",
-    };
+async function getProduct(slug: string): Promise<Product> {
+    let raw: BallouProduct | null = null;
+    try {
+        raw = await productBySlug(slug);
+    } catch {
+        // 404 API ou autre
+    }
+    if (!raw) notFound();
+    return mapBallouToSingleProduct(raw);
 }
 
 async function getSimilarProducts(prod: Product): Promise<Product[]> {
-    return MOCK.filter((p) => p.category === prod.category && p.slug !== prod.slug);
-}
-
-/** Utilisé seulement en export statique (prod cPanel) */
-export async function generateStaticParams() {
-    return MOCK.map((p) => ({ slug: p.slug }));
+    if (!prod.category) return [];
+    const { items } = await listProducts({
+        per_page: 8,
+        in_stock: true,
+        category: prod.category, // slug de catégorie
+    });
+    return items
+        .filter((p) => p.slug !== prod.slug)
+        .map(mapBallouToSingleProduct);
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
-    const product = await getProductBySlug(params.slug);
-    return {
-        title: product ? `${product.name} — Ballou` : "Produit — Ballou",
-        description: product?.description ?? "Détail produit Ballou",
-    };
+    const slug = decodeURIComponent(params.slug);
+    try {
+        const p = await productBySlug(slug);
+        return {
+            title: `${p.name} — Ballou`,
+            description: `Acheter ${p.name}`,
+        };
+    } catch {
+        return { title: "Produit — Ballou" };
+    }
 }
 
 export default async function Page({ params }: { params: { slug: string } }) {
-    const product = await getProductBySlug(params.slug);
+    const slug = decodeURIComponent(params.slug);
+
+    const product = await getProduct(slug);
     const similars = await getSimilarProducts(product);
 
     return (
         <main className="mx-auto max-w-6xl px-4 py-10">
             <SingleProduct product={product} brandPrimary="#e94e1a" brandDark="#29235c" />
-            <SimilarProduct products={similars} brandPrimary="#e94e1a" brandDark="#29235c" />
+            {similars.length > 0 && (
+                <SimilarProduct products={similars} brandPrimary="#e94e1a" brandDark="#29235c" />
+            )}
         </main>
     );
 }

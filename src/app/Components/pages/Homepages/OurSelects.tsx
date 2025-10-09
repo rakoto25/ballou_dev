@@ -194,8 +194,8 @@ export default function OurSelects() {
         },
         breakpoints: {
             "(max-width: 1536px)": { slides: { perView: 5, spacing: 16 } },
-            "(max-width: 1280px)": { slides: { perView: 4, spacing: 14 } },
-            "(max-width: 1024px)": { slides: { perView: 3, spacing: 12 } },
+            "(max-width: 1280px)": { slides: { perView: 5, spacing: 14 } },
+            "(max-width: 1024px)": { slides: { perView: 5, spacing: 12 } },
             "(max-width: 768px)": { slides: { perView: 2, spacing: 10 } },
             "(max-width: 640px)": { slides: { perView: 1, spacing: 8 } }, // ✅ 1 produit/slide en mobile
         },

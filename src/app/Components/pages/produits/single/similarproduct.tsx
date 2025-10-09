@@ -11,6 +11,14 @@ type SimilarProps = {
     brandDark?: string;    // #29235c
 };
 
+const EPS = 0.0001; // tolérance flottante
+
+function hasDiscount(price?: number, oldPrice?: number) {
+    if (price == null || oldPrice == null) return false;
+    if (!isFinite(price) || !isFinite(oldPrice)) return false;
+    return oldPrice - price > EPS; // oldPrice strictement supérieur
+}
+
 export default function SimilarProduct({
     products,
     title = "Produits similaires",
@@ -54,46 +62,68 @@ export default function SimilarProduct({
                 ref={scroller}
                 className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
             >
-                {products.map((p) => (
-                    <article
-                        key={p.id}
-                        className="min-w-[72%] snap-start rounded-xl border bg-white shadow-sm sm:min-w-[320px]"
-                        style={{ borderColor: "#e5e7eb" }}
-                    >
-                        <Link href={`/produit-unique/${encodeURIComponent(p.slug)}`} className="block">
-                            <div className="aspect-[4/3] w-full overflow-hidden rounded-t-xl bg-zinc-100">
-                                <img
-                                    src={p.images[0]}
-                                    alt={p.name}
-                                    className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
-                                />
-                            </div>
-                            <div className="p-3">
-                                <h3 className="line-clamp-2 text-sm font-semibold text-zinc-900">{p.name}</h3>
-                                <div className="mt-1 flex items-center gap-2">
-                                    <div className="text-base font-extrabold" style={{ color: brandPrimary }}>
-                                        {formatEUR(p.price)}
+                {products.map((p) => {
+                    const showStrikethrough = hasDiscount(p.price, p.oldPrice);
+
+                    return (
+                        <article
+                            key={p.id}
+                            className="min-w-[72%] snap-start rounded-xl border bg-white shadow-sm sm:min-w-[320px]"
+                            style={{ borderColor: "#e5e7eb" }}
+                        >
+                            <Link
+                                href={`/produit-unique/${encodeURIComponent(p.slug)}`}
+                                className="block"
+                            >
+                                <div className="aspect-[4/3] w-full overflow-hidden rounded-t-xl bg-zinc-100">
+                                    <img
+                                        src={p.images[0]}
+                                        alt={p.name}
+                                        className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+                                    />
+                                </div>
+                                <div className="p-3">
+                                    <h3 className="line-clamp-2 text-sm font-semibold text-zinc-900">
+                                        {p.name}
+                                    </h3>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <div
+                                            className="text-base font-extrabold"
+                                            style={{ color: brandPrimary }}
+                                        >
+                                            {formatMGA(p.price)}
+                                        </div>
+
+                                        {showStrikethrough && (
+                                            <div className="text-xs text-zinc-400 line-through">
+                                                {formatMGA(p.oldPrice!)}
+                                            </div>
+                                        )}
                                     </div>
-                                    {!!p.oldPrice && (
-                                        <div className="text-xs text-zinc-400 line-through">{formatEUR(p.oldPrice)}</div>
+
+                                    {p.rating !== undefined && (
+                                        <div className="mt-1 text-xs text-yellow-500">
+                                            ★ {p.rating.toFixed(1)}
+                                        </div>
                                     )}
                                 </div>
-                                {p.rating !== undefined && (
-                                    <div className="mt-1 text-xs text-yellow-500">★ {p.rating.toFixed(1)}</div>
-                                )}
-                            </div>
-                        </Link>
-                    </article>
-                ))}
+                            </Link>
+                        </article>
+                    );
+                })}
             </div>
         </section>
     );
 }
 
-function formatEUR(v: number) {
+function formatMGA(v: number) {
     try {
-        return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(v);
+        return new Intl.NumberFormat("fr-FR", {
+            style: "currency",
+            currency: "MGA",
+            maximumFractionDigits: 0, // souvent 0 en Ariary
+        }).format(v);
     } catch {
-        return `${v.toFixed(2)} €`;
+        return `${Math.round(v)} Ariary`;
     }
 }

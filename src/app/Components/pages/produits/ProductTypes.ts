@@ -1,11 +1,12 @@
-export type ProductListCard = {
-    id: string;
+export type Product = {
+    id: number;              // 👈 number (Woo ID)
     title: string;
     category: string;
     priceMGA: number;
     ref: string;
     img: string;
-    slug?: string; // 👈 ajoute un slug sur les items de la grille
+    slug?: string;
+    createdAt?: string | null;
 };
 
 // formateur MGA
@@ -16,7 +17,7 @@ export const fmtMGA = (v: number) =>
         maximumFractionDigits: 0,
     }).format(v);
 
-// helper de slug cohérent
+// helper de slug cohérent (fallback si pas de slug API)
 export const toSlug = (p: { slug?: string; title?: string; ref?: string }) => {
     if (p.slug) return p.slug;
     const src = (p.title || p.ref || "").trim();
