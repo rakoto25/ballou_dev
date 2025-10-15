@@ -3,7 +3,7 @@ import MerciInvoice from './MerciInvoice';
 import { headers } from 'next/headers';
 
 type Props = {
-    searchParams?: { order?: string; key?: string };
+    searchParams?: Promise<{ order?: string; key?: string }>;
 };
 
 function getAppOriginFromHeaders(): string {
@@ -14,8 +14,10 @@ function getAppOriginFromHeaders(): string {
 }
 
 export default async function Page({ searchParams }: Props) {
-    const orderId = searchParams?.order;
-    const orderKey = searchParams?.key;
+    const resolvedSearchParams = await searchParams;
+
+    const orderId = resolvedSearchParams?.order;
+    const orderKey = resolvedSearchParams?.key;
 
     if (!orderId || !orderKey) {
         return (
@@ -40,7 +42,7 @@ export default async function Page({ searchParams }: Props) {
         });
 
         if (!resp.ok) {
-            // essaye JSON puis texte
+            // essaie JSON puis texte
             let errMessage = `Erreur HTTP ${resp.status}`;
             try {
                 const errData = await resp.json();

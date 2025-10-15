@@ -1,4 +1,3 @@
-// app/produit-unique/[slug]/page.tsx
 import { notFound } from "next/navigation";
 import SingleProduct, { Product } from "@/app/Components/pages/produits/single/singleproduct";
 import SimilarProduct from "@/app/Components/pages/produits/single/similarproduct";
@@ -10,19 +9,11 @@ import {
 } from "@/lib/ballou";
 
 export const dynamicParams = true;
-// mets 0 si tu veux du 100% fresh à chaque requête, sinon 60s de cache ISR
 export const revalidate = 60;
 
-/** Adapter BallouProduct -> Product (type attendu par SingleProduct/SimilarProduct)
- *  - rating enlevé
- *  - conversion prix forcée en Ariary (MGA)
- *  - passage du stock (stockQty) depuis stock_qty
- */
 function mapBallouToSingleProduct(p: BallouProduct): Product {
     const price = parseWooPrice(p.sale ?? p.price ?? p.regular ?? "0", "MGA");
     const oldPrice = p.regular ? parseWooPrice(p.regular, "MGA") : undefined;
-
-    // stock effectif : 0 si outofstock, sinon valeur numérique si connue, sinon "illimité" (undefined)
     const stockQty =
         p.stock_status === "outofstock"
             ? 0
@@ -44,19 +35,18 @@ function mapBallouToSingleProduct(p: BallouProduct): Product {
         ].filter(Boolean) as { label: string; value: string }[],
         tags: (p.categories ?? []).map((c) => c.name),
         category: p.categories?.[0]?.slug ?? "autres",
-        stockQty, // 👈 transmis au composant pour brider (-/+) à la quantité réelle
+        stockQty,
     };
 }
 
-async function getProduct(slug: string): Promise<Product> {
-    let raw: BallouProduct | null = null;
+async function getProduct(slug: string): Promise<Product | null> {
     try {
-        raw = await productBySlug(slug);
+        const raw = await productBySlug(slug);
+        if (!raw) return null;
+        return mapBallouToSingleProduct(raw);
     } catch {
-        // 404 API ou autre
+        return null;
     }
-    if (!raw) notFound();
-    return mapBallouToSingleProduct(raw);
 }
 
 async function getSimilarProducts(prod: Product): Promise<Product[]> {
@@ -64,11 +54,9 @@ async function getSimilarProducts(prod: Product): Promise<Product[]> {
     const { items } = await listProducts({
         per_page: 8,
         in_stock: true,
-        category: prod.category, // slug de catégorie
+        category: prod.category,
     });
-    return items
-        .filter((p) => p.slug !== prod.slug)
-        .map(mapBallouToSingleProduct);
+    return items.filter((p) => p.slug !== prod.slug).map(mapBallouToSingleProduct);
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
@@ -84,10 +72,15 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     }
 }
 
+// Ici pas de typage explicite de PageProps : 
 export default async function Page({ params }: { params: { slug: string } }) {
     const slug = decodeURIComponent(params.slug);
 
     const product = await getProduct(slug);
+    if (!product) {
+        notFound();
+    }
+
     const similars = await getSimilarProducts(product);
 
     return (
