@@ -1,21 +1,14 @@
 "use client";
 
 import * as React from "react";
-import Bestsellers, {
-    STATIC_BESTSELLERS,
-    type BestsellerProduct,
-} from "./BestSeller"; // ou "./bestseller" selon le vrai nom du fichier
+
+// ✅ Importe le composant dynamique par son *vrai* nom de fichier
+//    Assure-toi que le fichier s'appelle exactement "Bestsellers.tsx"
+// import Bestsellers from "./Bestsellers";
+import Bestsellers from "./BestSeller";
 
 export default function BestsellersClient() {
-    const handleAddToCart = React.useCallback((p: BestsellerProduct) => {
-        // ⬇️ Branche ici ton store panier / API / toast, etc.
-        console.log("add to cart:", p.id, p.title);
-    }, []);
-
-    return (
-        <Bestsellers
-            products={STATIC_BESTSELLERS} // tu peux aussi omettre: le composant a déjà un fallback
-            onAddToCart={handleAddToCart}
-        />
-    );
+    // plus d’import STATIC_BESTSELLERS, plus de types fantômes
+    // le composant Bestsellers gère lui-même l’ajout au panier et le fetch
+    return <Bestsellers />;
 }

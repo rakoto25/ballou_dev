@@ -1,23 +1,36 @@
+// src/app/(site)/CartBadge.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 
-/** Lit le cookie "cart" (JSON) et retourne la somme des qty. */
-function getCartCountFromCookie(): number {
+async function fetchServerCount(): Promise<number> {
     try {
-        const m = document.cookie
-            .split("; ")
-            .find((row) => row.startsWith("cart="));
+        const res = await fetch("/api/cart/count", { cache: "no-store" });
+        if (!res.ok) return 0;
+        const { count } = await res.json();
+        return Number.isFinite(count) ? count : 0;
+    } catch {
+        return 0;
+    }
+}
+
+// (optionnel) lit l'ancien cookie non-HttpOnly pour migration/cleanup
+function getLegacyCountAndMaybeCleanup(): number {
+    try {
+        const m = document.cookie.split("; ").find((row) => row.startsWith("cart="));
         if (!m) return 0;
         const raw = decodeURIComponent(m.split("=", 2)[1] || "[]");
         const arr = JSON.parse(raw);
         if (!Array.isArray(arr)) return 0;
-        let sum = 0;
-        for (const it of arr) {
+        const sum = arr.reduce((s: number, it: any) => {
             const q = Number(it?.qty);
-            if (Number.isFinite(q) && q > 0) sum += q;
-        }
-        return sum;
+            return s + (Number.isFinite(q) && q > 0 ? q : 0);
+        }, 0);
+
+        // 🧹 on supprime l'ancien cookie non-HttpOnly pour éviter les confusions futures
+        document.cookie = "cart=; Max-Age=0; path=/";
+
+        return sum || 0;
     } catch {
         return 0;
     }
@@ -26,19 +39,29 @@ function getCartCountFromCookie(): number {
 export default function CartBadge() {
     const [count, setCount] = useState<number>(0);
 
-    const refresh = () => setCount(getCartCountFromCookie());
+    const refresh = async () => {
+        // 1) tente le serveur (source de vérité)
+        const server = await fetchServerCount();
+        if (server > 0) {
+            setCount(server);
+            return;
+        }
+        // 2) en dernier recours, migre/efface un éventuel vieux cookie lisible
+        const legacy = getLegacyCountAndMaybeCleanup();
+        setCount(legacy);
+    };
 
     useEffect(() => {
-        // 1) init
+        // init
         refresh();
 
-        // 2) se met à jour quand on revient sur l’onglet / focus
+        // mettre à jour au focus/retour onglet
         const onFocus = () => refresh();
         const onVisibility = () => {
             if (document.visibilityState === "visible") refresh();
         };
 
-        // 3) écoute un événement custom "cart:changed" (émis par CartClient)
+        // événement custom émis par CartClient après écriture du cookie côté serveur
         const onCartChanged = () => refresh();
 
         window.addEventListener("focus", onFocus);
@@ -52,7 +75,6 @@ export default function CartBadge() {
         };
     }, []);
 
-    // Affiche toujours un badge, même à 0 (demande)
     return (
         <span
             suppressHydrationWarning

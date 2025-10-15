@@ -65,7 +65,6 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
         setSyncing((n) => n + 1);
         try {
             const out = await fn();
-            // prévient les listeners (CartBadge) que le cookie a changé
             if (typeof window !== "undefined") {
                 window.dispatchEvent(new Event("cart:changed"));
             }
@@ -95,7 +94,7 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
         );
     };
 
-    /** Recalcule le devis coté WP */
+    /** Recalcule le devis côté WP */
     const refresh = (opts?: { keepChosen?: boolean }) => {
         startTransition(async () => {
             setError(null);
@@ -126,7 +125,6 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
         const max = it?.max_qty ?? null;
         const clamped = Math.max(1, max === null ? next : Math.min(next, max));
 
-        // Optimistic UI: lignes
         setLines((prev) => prev.map((l) => (l.id === id ? { ...l, qty: clamped } : l)));
 
         startTransition(async () => {
@@ -188,9 +186,18 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
         currency,
     };
 
+    // ✅ Détection des produits invalides (rupture ou stock dépassé)
+    const invalidItems = quote.items.filter(
+        (it) => !it.available || (it.max_qty !== null && it.qty > it.max_qty)
+    );
+    const hasInvalid = invalidItems.length > 0;
+
     // Aller au checkout — attend que les Set-Cookie soient écrits
     const goCheckout = async () => {
-        // petite marge pour laisser le navigateur appliquer les Set-Cookie
+        if (hasInvalid) {
+            setError("Certains articles ne sont plus disponibles. Veuillez corriger le panier.");
+            return;
+        }
         await new Promise((r) => setTimeout(r, 30));
         router.push("/checkout");
     };
@@ -247,6 +254,9 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
                                                 >
                                                     {it.product.name}
                                                 </a>
+                                                {!it.available && (
+                                                    <div className="text-xs text-red-600 mt-1">Indisponible</div>
+                                                )}
                                                 {it.max_qty !== null && (
                                                     <div className="text-xs text-slate-500 mt-1">
                                                         Stock max: {it.max_qty}
@@ -312,87 +322,6 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
                                 </tbody>
                             </table>
                         </div>
-
-                        {/* Mobile */}
-                        <div className="md:hidden divide-y divide-slate-100">
-                            {quote.items.map((it) => (
-                                <div key={it.id} className="p-4">
-                                    <div className="flex gap-3">
-                                        <img
-                                            src={it.product.images?.[0]?.src || "/placeholder.png"}
-                                            alt={it.product.images?.[0]?.alt || it.product.name}
-                                            className="h-20 w-20 rounded-xl object-cover"
-                                        />
-                                        <div className="flex-1">
-                                            <a
-                                                href={it.product.permalink || "#"}
-                                                className="font-medium block"
-                                                style={{ color: "#29235c" }}
-                                            >
-                                                {it.product.name}
-                                            </a>
-                                            <div className="text-sm text-slate-600 mt-1">{fmtMGA(it.unit_price)}</div>
-
-                                            <div className="mt-3 flex items-center justify-between">
-                                                <div className="inline-flex items-center rounded-xl border border-slate-200 overflow-hidden">
-                                                    <button
-                                                        type="button"
-                                                        className="px-3 py-2"
-                                                        onClick={() => changeQty(it.id, it.qty - 1)}
-                                                        disabled={isBusy || it.qty <= 1}
-                                                    >
-                                                        −
-                                                    </button>
-                                                    <input
-                                                        value={it.qty}
-                                                        onChange={(e) =>
-                                                            changeQty(
-                                                                it.id,
-                                                                Number.isFinite(parseInt(e.target.value))
-                                                                    ? parseInt(e.target.value)
-                                                                    : 1
-                                                            )
-                                                        }
-                                                        className="w-12 text-center py-2 outline-none"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        className="px-3 py-2"
-                                                        onClick={() => changeQty(it.id, it.qty + 1)}
-                                                        disabled={isBusy || (it.max_qty !== null && it.qty >= it.max_qty)}
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-                                                <div className="font-semibold">{fmtMGA(it.line_total)}</div>
-                                            </div>
-
-                                            <div className="mt-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeLine(it.id)}
-                                                    className="text-sm underline"
-                                                    style={{ color: "#e94e1a" }}
-                                                    disabled={isBusy}
-                                                >
-                                                    Retirer
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {quote.items.length > 0 && (
-                                <div className="p-4 bg-slate-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-medium">Sous-total (HT)</span>
-                                        <span className="font-bold" style={{ color: "#29235c" }}>
-                                            {fmtMGA(totals.subtotal_ex_tax)}
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
                     </>
                 )}
 
@@ -401,7 +330,7 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
                 )}
             </section>
 
-            {/* Récapitulatif / Livraison / Coupon */}
+            {/* Récapitulatif */}
             <aside className="lg:sticky lg:top-6 h-fit">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <div className="px-6 py-5 border-b border-slate-100">
@@ -411,123 +340,7 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
                     </div>
 
                     <div className="px-6 py-5 space-y-4">
-                        {/* Adresse */}
-                        <div>
-                            <h3 className="font-semibold mb-2">Adresse</h3>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="col-span-2">
-                                    <label className="text-xs text-slate-500">Pays</label>
-                                    <input
-                                        className="w-full rounded-xl border border-slate-200 px-3 py-2"
-                                        value={address.country}
-                                        onChange={(e) => setAddress((a) => ({ ...a, country: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-500">Code postal</label>
-                                    <input
-                                        className="w-full rounded-xl border border-slate-200 px-3 py-2"
-                                        value={address.postcode || ""}
-                                        onChange={(e) => setAddress((a) => ({ ...a, postcode: e.target.value }))}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-500">Ville</label>
-                                    <input
-                                        className="w-full rounded-xl border border-slate-200 px-3 py-2"
-                                        value={address.city || ""}
-                                        onChange={(e) => setAddress((a) => ({ ...a, city: e.target.value }))}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Livraison */}
-                        <div>
-                            <h3 className="font-semibold mb-2">Livraison</h3>
-                            {quote.shipping_methods && quote.shipping_methods.length > 0 ? (
-                                <div className="space-y-2">
-                                    {quote.shipping_methods.map((r) => (
-                                        <label key={r.id} className="flex items-center justify-between gap-3">
-                                            <span className="inline-flex items-center gap-2">
-                                                <input
-                                                    type="radio"
-                                                    name="ship"
-                                                    value={r.id}
-                                                    checked={chosenShip === r.id}
-                                                    onChange={() => selectShippingMethod(r.id)}
-                                                    disabled={isBusy}
-                                                />
-                                                {r.label}
-                                            </span>
-                                            <span className="font-medium">{fmtMGA(r.total)}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-sm text-slate-500">
-                                    Aucune méthode de livraison disponible pour cette adresse.
-                                </p>
-                            )}
-                        </div>
-
-                        {/* Coupons */}
-                        <div>
-                            <h3 className="font-semibold mb-2">Coupon</h3>
-                            <form
-                                className="flex gap-2"
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    applyCoupon();
-                                }}
-                            >
-                                <input
-                                    type="text"
-                                    placeholder="Code promo"
-                                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#29235c]/20"
-                                    value={couponInput}
-                                    onChange={(e) => setCouponInput(e.target.value)}
-                                />
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 rounded-xl bg-[#29235c] text-white hover:opacity-90 disabled:opacity-60"
-                                    disabled={isBusy || !couponInput.trim()}
-                                >
-                                    Appliquer
-                                </button>
-                            </form>
-
-                            {!!quote.applied_coupons?.length && (
-                                <ul className="mt-3 space-y-1 text-sm">
-                                    {quote.applied_coupons.map((c) => (
-                                        <li key={c.code} className="flex items-center justify-between">
-                                            <div>
-                                                <span className={`font-medium ${c.valid ? "" : "text-red-600"}`}>
-                                                    {c.code.toUpperCase()}
-                                                </span>
-                                                {c.valid ? (
-                                                    <span className="ml-2 text-slate-500">
-                                                        – {c.type} (appliqué {fmtMGA(c.applied)})
-                                                    </span>
-                                                ) : (
-                                                    <span className="ml-2 text-red-600">{c.message || "Invalide"}</span>
-                                                )}
-                                            </div>
-                                            <button
-                                                className="text-xs text-slate-500 hover:underline"
-                                                onClick={() => removeCoupon(c.code)}
-                                                disabled={isBusy}
-                                            >
-                                                retirer
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-
                         {/* Totaux */}
-                        <div className="h-px bg-slate-100" />
                         <div className="space-y-2 text-sm">
                             <Row label="Sous-total (HT)" value={fmtMGA(totals.subtotal_ex_tax)} />
                             {totals.discount_ex_tax > 0 && (
@@ -540,19 +353,41 @@ export default function CartClient({ initialLines, initialQuote }: Props) {
                             <Row bold label="Total TTC" value={fmtMGA(totals.total)} />
                         </div>
 
+                        {/* ⚠️ Produits invalides */}
+                        {hasInvalid && (
+                            <div className="text-sm text-red-600 border border-red-200 bg-red-50 p-3 rounded-xl">
+                                Certains articles ne sont plus disponibles :
+                                <ul className="list-disc pl-5 mt-1">
+                                    {invalidItems.map((it) => (
+                                        <li key={it.id}>
+                                            {it.product?.name}{" "}
+                                            {!it.available
+                                                ? "(indisponible)"
+                                                : it.max_qty !== null
+                                                    ? `(max ${it.max_qty})`
+                                                    : ""}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
                         {error && <p className="text-sm text-red-600">{error}</p>}
 
-                        {/* Bouton sécurisé (attend la sync) */}
+                        {/* Bouton sécurisé */}
                         <button
                             type="button"
                             onClick={goCheckout}
-                            disabled={isBusy || quote.items.length === 0}
+                            disabled={isBusy || quote.items.length === 0 || hasInvalid}
                             className="mt-2 block w-full text-center px-5 py-3 rounded-xl bg-[#e94e1a] text-white font-medium hover:opacity-95 disabled:opacity-60"
                         >
                             {isBusy ? "Synchronisation…" : "Passer à la caisse"}
                         </button>
 
-                        <a href="/produits" className="block text-center text-sm text-[#29235c] underline">
+                        <a
+                            href="/produits"
+                            className="block text-center text-sm text-[#29235c] underline"
+                        >
                             Continuer vos achats
                         </a>
                     </div>

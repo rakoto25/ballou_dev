@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { startCheckout } from "./actions";
+import { startCheckout } from "../../api/cart/checkout/confirm/actions";
 
 export default function PayButton({ payload }: { payload: any }) {
     const router = useRouter();

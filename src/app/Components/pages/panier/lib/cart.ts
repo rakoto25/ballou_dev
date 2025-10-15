@@ -1,11 +1,15 @@
-// lib/cart.ts
-import 'server-only';
-import { cookies } from 'next/headers';
+// cart.ts
+import { cookies } from "next/headers";
 
 export type CartLine = { id: number; qty: number };
-export type Cart = CartLine[];
 
-export function readCart(): Cart {
-    const raw = cookies().get('cart')?.value || '[]';
-    try { return JSON.parse(raw) as Cart; } catch { return []; }
+export async function readCart(): Promise<CartLine[]> {
+    const store = await cookies(); // ⬅️ await obligatoire
+    const raw = store.get("cart")?.value ?? "[]";
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
 }

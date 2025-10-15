@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 type Line = { id: number; qty: number };
+
 type CartContextType = {
     lines: Line[];
     count: number;
@@ -13,42 +14,76 @@ type CartContextType = {
 
 const CartCtx = createContext<CartContextType | null>(null);
 
-// --- helpers cookies ---
-function readCartCookie(): Line[] {
+// ---------- Shadow local pour rendu instantané & multi-onglets ----------
+const SHADOW_KEY = 'cart_shadow';
+
+function writeShadow(lines: Line[]) {
     try {
-        const match = document.cookie.split(';').find(c => c.trim().startsWith('cart='));
-        if (!match) return [];
-        const raw = decodeURIComponent(match.split('=')[1] || '[]');
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) return arr.filter(x => typeof x?.id === 'number' && typeof x?.qty === 'number');
-        return [];
-    } catch { return []; }
+        localStorage.setItem(SHADOW_KEY, JSON.stringify(lines));
+    } catch { }
 }
 
-function writeLocalShadow(lines: Line[]) {
-    // miroir local pour badge instantané et éventuels refresh
-    localStorage.setItem('cart_shadow', JSON.stringify(lines));
-}
-function readLocalShadow(): Line[] {
+function readShadow(): Line[] {
     try {
-        return JSON.parse(localStorage.getItem('cart_shadow') || '[]');
-    } catch { return []; }
+        const raw = localStorage.getItem(SHADOW_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(arr)) return [];
+        return arr
+            .map((l: any) => ({ id: Number(l?.id), qty: Number(l?.qty) }))
+            .filter((l) => Number.isFinite(l.id) && Number.isFinite(l.qty) && l.qty > 0);
+    } catch {
+        return [];
+    }
+}
+
+// ---------- Récupère les lignes côté serveur (cookie HttpOnly) ----------
+async function fetchServerLines(): Promise<Line[]> {
+    try {
+        const res = await fetch('/api/cart/lines', { cache: 'no-store' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        const arr = Array.isArray(data?.lines) ? data.lines : [];
+        return arr
+            .map((l: any) => ({ id: Number(l?.id), qty: Number(l?.qty) }))
+            .filter((l) => Number.isFinite(l.id) && Number.isFinite(l.qty) && l.qty > 0);
+    } catch {
+        return [];
+    }
+}
+
+// ---------- Dispatch un event pour prévenir le reste du front ----------
+function emitCartChanged() {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('cart:changed'));
+    }
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
     const [lines, setLines] = useState<Line[]>([]);
 
-    // init depuis cookie ou localStorage (shadow) pour 1er rendu client
+    // 1) Rendu client initial : shadow pour instantané, puis sync serveur (HttpOnly)
     useEffect(() => {
-        const initial = readCartCookie();
-        setLines(initial.length ? initial : readLocalShadow());
+        // instantané
+        setLines(readShadow());
+
+        // synchro serveur (source de vérité)
+        let alive = true;
+        (async () => {
+            const server = await fetchServerLines();
+            if (!alive) return;
+            setLines(server);
+            writeShadow(server);
+        })();
+        return () => {
+            alive = false;
+        };
     }, []);
 
-    // écoute les changements de storage (si autre onglet modifie)
+    // 2) Multi-onglets : si un autre onglet modifie le panier
     useEffect(() => {
         const onStorage = (e: StorageEvent) => {
-            if (e.key === 'cart_shadow') {
-                setLines(readLocalShadow());
+            if (e.key === SHADOW_KEY) {
+                setLines(readShadow());
             }
         };
         window.addEventListener('storage', onStorage);
@@ -57,53 +92,72 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     const count = useMemo(() => lines.reduce((s, l) => s + l.qty, 0), [lines]);
 
-    // --- actions qui appellent tes API routes et mettent à jour l'état + shadow ---
+    // --- Actions (optimistic UI + synchro serveur) ---
     const setQty = async (id: number, qty: number) => {
-        if (qty < 0) qty = 0;
-        // Optimistic UI
-        setLines(prev => {
+        // clamp
+        qty = Math.max(0, Math.floor(qty));
+
+        // Optimistic
+        setLines((prev) => {
             const next = [...prev];
-            const i = next.findIndex(l => l.id === id);
+            const i = next.findIndex((l) => l.id === id);
             if (i === -1 && qty > 0) next.push({ id, qty });
             else if (i >= 0) {
                 if (qty === 0) next.splice(i, 1);
                 else next[i] = { id, qty };
             }
-            writeLocalShadow(next);
+            writeShadow(next);
             return next;
         });
-        // PATCH cookie serveur
-        await fetch('/api/cart/update', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, qty }),
-        }).catch(() => { });
+
+        // PATCH serveur (écrit le cookie HttpOnly)
+        try {
+            await fetch('/api/cart/update', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, qty }),
+            });
+        } catch {
+            // En cas d'erreur réseau on garde l'optimistic state, tu peux re-synchroniser si besoin :
+            // const server = await fetchServerLines(); setLines(server); writeShadow(server);
+        } finally {
+            emitCartChanged();
+        }
     };
 
     const add = async (id: number, delta: number = 1) => {
-        const current = lines.find(l => l.id === id)?.qty || 0;
+        const current = lines.find((l) => l.id === id)?.qty || 0;
         await setQty(id, current + delta);
     };
 
     const remove = async (id: number) => {
         // Optimistic
-        setLines(prev => {
-            const next = prev.filter(l => l.id !== id);
-            writeLocalShadow(next);
+        setLines((prev) => {
+            const next = prev.filter((l) => l.id !== id);
+            writeShadow(next);
             return next;
         });
-        await fetch('/api/cart/remove', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        }).catch(() => { });
+
+        try {
+            await fetch('/api/cart/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id }),
+            });
+        } catch {
+            // idem : on pourrait re-sync depuis le serveur si tu veux
+        } finally {
+            emitCartChanged();
+        }
     };
 
-    const value = useMemo<CartContextType>(() => ({ lines, count, add, setQty, remove }), [lines, count]);
+    const value = useMemo<CartContextType>(
+        () => ({ lines, count, add, setQty, remove }),
+        [lines, count]
+    );
 
     return <CartCtx.Provider value={value}>{children}</CartCtx.Provider>;
 }
-
 export function useCart() {
     const ctx = useContext(CartCtx);
     if (!ctx) throw new Error('useCart must be used within <CartProvider>');
